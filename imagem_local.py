@@ -227,16 +227,16 @@ def etapa_sdxl(trab):
         torch.cuda.empty_cache()
         if tem_lora:
             if p.get("lora") == "cartoon":
-                pipe.enable_lora(); pipe.set_adapters(["cartoon"], adapter_weights=[4.0])
+                pipe.enable_lora(); pipe.set_adapters(["cartoon"], adapter_weights=[3.0])
             else:
                 pipe.disable_lora()
         q = MODOS.get(p.get("qualidade") or "cinematografico", MODOS["cinematografico"])
         prompt_, neg_ = p["prompt"], NEGATIVO
         if tem_lora and p.get("lora") == "cartoon":  # estilo vem PRIMEIRO e foto/realismo proibidos
-            prompt_ = ("simple 2d adult animated cartoon style, thick uniform black outlines, flat colors with minimal shading, "
-                       "characters with big round heads, large white eyes with small dot pupils, thin noodle arms, simple shapes. " + prompt_)
-            neg_ = ("photo, photorealistic, realistic, 3d render, painting, oil painting, detailed skin texture, realistic proportions, "
-                    "anime, manga, " + NEGATIVO)
+            # estilo escolhido em teste (Fooocus "sai-comic book" + "Caricature"): o mais proximo das referencias
+            prompt_ = ("comic caricature, bold black outlines, flat colors, big head, big round white eyes with tiny pupils, thin arms. "
+                       + prompt_.split(". Characters")[0][:260])  # estilo primeiro (o modelo so le ~77 palavras)
+            neg_ = "photograph, photo, realistic, photorealistic, 3d, deformed, glitch, noisy, stock photo, " + NEGATIVO
         txt = {"prompt": prompt_, "negative_prompt": neg_}
         if comp is not None and not (tem_lora and p.get("lora") == "cartoon"):  # Compel anula o estilo LoRA no texto
             try:
@@ -249,7 +249,7 @@ def etapa_sdxl(trab):
             except Exception as e:
                 log(f"compel falhou ({str(e)[:60]}) - usando prompt normal")
         lat = pipe(**txt, width=w, height=h, num_inference_steps=q["passos"],
-                   guidance_scale=max(q["forca"], 1.5) if p.get("lora") == "cartoon" else q["forca"], generator=g, output_type="latent").images
+                   guidance_scale=max(q["forca"], 2.0) if p.get("lora") == "cartoon" else q["forca"], generator=g, output_type="latent").images
         torch.cuda.synchronize()
         t_ger = time.time() - t1
         if t_ger < MIN_GERAR_S:  # impossivel gerar uma imagem real tao rapido: a placa entrou em falha

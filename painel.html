@@ -355,7 +355,7 @@ $("#btn-sugerir").onclick=async()=>{const b=$("#btn-sugerir");b.disabled=true;b.
     $("#sugestoes").innerHTML=r.sugestoes.map((x,i)=>`<button type="button" class="btn ghost" data-sug="${i}" style="text-align:left;white-space:normal;height:auto;padding:12px;display:block"><b>${esc(x.titulo)}</b><br><span style="color:var(--muted);font-size:12.5px">${esc(x.por_que)}</span></button>`).join("");
     $("#sugestoes").querySelectorAll("[data-sug]").forEach(e=>e.onclick=()=>{const x=r.sugestoes[+e.dataset.sug];$("#g-tema").value=x.tema;$("#g-titulo").value=x.titulo;$("#sugestoes").querySelectorAll("[data-sug]").forEach(o=>o.style.borderColor="");e.style.borderColor="var(--accent)"});
   }catch(e){alert("Não consegui sugerir agora: "+e)}b.disabled=false;b.textContent="💡 Sugerir outros temas"};
-$("#g-tema-canal").onchange=()=>{const _t=$("#g-tema-canal").value;if(_t=="historia"&&$("#g-modo").value!="mapa"){$("#g-modo").value="mapa";ajustaModo()}else if(_t!="historia"&&$("#g-modo").value=="mapa"){$("#g-modo").value="short";ajustaModo();$("#g-tema-canal").value=_t};try{localStorage.setItem("tema_canal",$("#g-tema-canal").value)}catch(e){};$("#g-estilo").placeholder=ESTILOS[$("#g-tema-canal").value]||""};
+$("#g-tema-canal").onchange=()=>{const _t=$("#g-tema-canal").value;if(_t=="historia"&&$("#g-modo").value!="mapa"&&$("#g-visual").value!="cartoon_doc"){$("#g-modo").value="mapa";ajustaModo()}else if(_t!="historia"&&$("#g-modo").value=="mapa"){$("#g-modo").value="short";ajustaModo();$("#g-tema-canal").value=_t};try{localStorage.setItem("tema_canal",$("#g-tema-canal").value)}catch(e){};$("#g-estilo").placeholder=ESTILOS[$("#g-tema-canal").value]||""};
 api("/api/temas").then(t=>{if(!t||t.erro)return;ESTILOS=t.estilos;TABELA=t.tabela_cenas||TABELA;
   $("#g-tema-canal").innerHTML=Object.entries(t.temas).map(([k,v])=>`<option value="${k}" ${k==(localStorage.getItem("tema_canal")||"terror")?"selected":""}>${esc(v)}</option>`).join("");$("#g-tema-canal").onchange();estimar()});
 ajustaModo();
@@ -363,7 +363,7 @@ $("#btn-novo").onclick=()=>{if(view!="Para_Aprovar"){view="Para_Aprovar";documen
   const g=$("#gerador");g.classList.toggle("aberto");if(g.classList.contains("aberto"))window.scrollTo({top:0,behavior:"smooth"})};
 $("#btn-gerar").onclick=async()=>{
   // canal de historia SEMPRE usa o mapa animado (bonecos) - Short/Longo viram mapa em pe/deitado
-  if($("#g-tema-canal").value=="historia"&&$("#g-modo").value!="mapa"){const longo=$("#g-modo").value=="longo";$("#g-modo").value="mapa";ajustaModo();
+  if($("#g-tema-canal").value=="historia"&&$("#g-modo").value!="mapa"&&$("#g-visual").value!="cartoon_doc"){const longo=$("#g-modo").value=="longo";$("#g-modo").value="mapa";ajustaModo();
     if(longo){$("#g-dur").value=[...$("#g-dur").options].some(o=>o.value=="300")?"300":$("#g-dur").value}$("#g-tela").value=duracao()>180?"16:9":"9:16"}
   const _em_pe=($("#g-tela").value||"")!=="16:9"&&!($("#g-modo").value=="longo"&&!$("#g-tela").value);
   if(!await confirmar("Criar vídeo agora?",`${$("#g-modo").selectedOptions[0].text.replace(/^\W+/,"")} · ${$("#g-dur").selectedOptions[0].text} · ${_em_pe?"📱 EM PÉ (9:16, Short)":"🖥️ DEITADO (16:9, vídeo longo)"}. Usa a cota grátis do Gemini para o roteiro.`,"Criar",false))return;
