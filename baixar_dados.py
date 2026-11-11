@@ -65,7 +65,30 @@ def mapa_escuro():
     os.remove(os.path.join(MAPAS, tif)); os.remove(z)
 
 
+PACOTE = "https://github.com/vsales85/Dark_youtube/releases/download/dados-v1/dados-dark-studio-v1.zip"
+
+
+def pacote_pronto():
+    """Atalho: baixa o pacote pronto do GitHub (58 MB) com mapas escuros, fronteiras, fontes e detector de rosto."""
+    if all(os.path.exists(os.path.join(MAPAS, f"escuro_{n}.jpg")) for n in (1, 2, 4, 8)) and os.path.exists(config.ROSTO):
+        return True
+    z = os.path.join(config.MODELOS, "dados-v1.zip")
+    try:
+        baixar(PACOTE, z)
+        with zipfile.ZipFile(z) as zz:
+            zz.extractall(config.MODELOS)
+        os.remove(z)
+        print("   pacote pronto instalado")
+        return True
+    except Exception as e:
+        print("   pacote pronto indisponivel (", str(e)[:60], ") - baixando das fontes originais")
+        return False
+
+
 def main():
+    if pacote_pronto():
+        if "--imagens" not in sys.argv:
+            print("\nPronto! Dados em:", config.MODELOS); return
     print("1/4 Fronteiras (Natural Earth)")
     base = "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/"
     baixar(base + "ne_10m_admin_1_states_provinces.geojson", os.path.join(MAPAS, "estados.geojson"))

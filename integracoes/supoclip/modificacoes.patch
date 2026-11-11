@@ -1,0 +1,447 @@
+diff --git a/.gitignore b/.gitignore
+index 3df83b3..0eb8624 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -25,3 +25,8 @@ docs/youtube-provider-registry*.json
+ 
+ # Local agent checkouts
+ .claude/worktrees/
++
++# Personal voice recordings for the voice-clone service
++vozes/
++musicas/
++canais/
+diff --git a/backend/Dockerfile b/backend/Dockerfile
+index 20b6d6c..fecb73a 100644
+--- a/backend/Dockerfile
++++ b/backend/Dockerfile
+@@ -42,6 +42,9 @@ RUN uv venv .venv && \
+ 
+ # yt-dlp and its PO-token plugin are installed from uv.lock above.
+ 
++# faster-whisper: CPU int8 transcription, several times faster than openai-whisper.
++RUN uv pip install --python .venv/bin/python "faster-whisper>=1.1,<2" "edge-tts>=7,<8"
++
+ # Copy source code
+ COPY src/ ./src/
+ 
+diff --git a/backend/src/config.py b/backend/src/config.py
+index 26ae508..30b488f 100644
+--- a/backend/src/config.py
++++ b/backend/src/config.py
+@@ -34,6 +34,10 @@ class Config:
+         self.llm = self._get_runtime_setting("LLM") or self._infer_default_llm()
+         # Optional separate model for the cross-window candidate rerank pass.
+         self.rerank_llm = self._get_optional_env("RERANK_LLM") or self.llm
++        self.voice_clone_url = (self._get_optional_env("VOICE_CLONE_URL") or "http://host.docker.internal:3900").rstrip("/")
++        # Model for the studio helpers (script, fact check, ideas, titles...). A "lite"
++        # model keeps them working within the free daily quota; clip selection keeps LLM.
++        self.studio_llm = self._get_optional_env("STUDIO_LLM") or self.llm
+         self.assembly_ai_api_key = self._get_runtime_setting("ASSEMBLY_AI_API_KEY")
+         self.assembly_ai_http_timeout_seconds = int(
+             os.getenv("ASSEMBLY_AI_HTTP_TIMEOUT_SECONDS", "900")
+diff --git a/backend/src/main.py b/backend/src/main.py
+index 790f100..bc0af3e 100644
+--- a/backend/src/main.py
++++ b/backend/src/main.py
+@@ -179,6 +179,12 @@ def create_app(
+             headers={TRACE_HEADER: trace_id},
+         )
+ 
++    from .api.routes.studio import router as studio_router
++    from .api.routes.trending import router as trending_router
++
++    # Before tasks.router: /tasks/studio/* must not match /tasks/{task_id}.
++    app.include_router(studio_router)
++    app.include_router(trending_router)
+     app.include_router(tasks.router)
+     from .api.routes.clip_exports import router as clip_export_router
+     from .api.routes.editor import router as editor_router
+@@ -192,6 +198,9 @@ def create_app(
+     from .api.routes.api_keys import router as api_keys_router
+     from .api.routes.account import router as account_router
+     from .api.routes.social import router as social_router
++    from .api.routes.narration import router as narration_router
++    from .api.routes.thumbnails import router as thumbnails_router
++    from .api.routes.cover import router as cover_router
+     from .api.routes.email_preferences import router as email_preferences_router
+ 
+     app.include_router(media_router)
+@@ -200,6 +209,9 @@ def create_app(
+     app.include_router(api_keys_router)
+     app.include_router(account_router)
+     app.include_router(social_router)
++    app.include_router(narration_router)
++    app.include_router(thumbnails_router)
++    app.include_router(cover_router)
+     app.include_router(email_preferences_router)
+ 
+     @app.get("/")
+diff --git a/backend/src/media/transcription.py b/backend/src/media/transcription.py
+index 0403854..0d43300 100644
+--- a/backend/src/media/transcription.py
++++ b/backend/src/media/transcription.py
+@@ -9,6 +9,7 @@ import assemblyai as aai
+ from ..config import get_config
+ import httpx
+ import json
++import os
+ import re
+ import time
+ from .common import (
+@@ -186,6 +187,49 @@ def _get_whisper_model(model_name: str = "base"):
+     return _WHISPER_MODEL_CACHE[model_name]
+ 
+ 
++def _transcribe_with_faster_whisper(
++    audio_path: Path, model_name: str, language: Optional[str]
++) -> Dict[str, Any]:
++    """CTranslate2 Whisper (int8 on CPU): several times faster than openai-whisper.
++
++    Returns the same dict shape as openai-whisper's ``transcribe``.
++    """
++    from faster_whisper import WhisperModel
++
++    cache_key = f"faster:{model_name}"
++    if cache_key not in _WHISPER_MODEL_CACHE:
++        logger.info("Loading faster-whisper model: %s (int8, cpu)", model_name)
++        _WHISPER_MODEL_CACHE[cache_key] = WhisperModel(
++            model_name, device="cpu", compute_type="int8", cpu_threads=os.cpu_count() or 4
++        )
++    model = _WHISPER_MODEL_CACHE[cache_key]
++    logger.info(
++        "Starting faster-whisper transcription with model: %s (language: %s)",
++        model_name,
++        language or "auto",
++    )
++    segments, info = model.transcribe(
++        str(audio_path), word_timestamps=True, language=language, vad_filter=True, beam_size=1
++    )
++    result_segments = [
++        {
++            "start": segment.start,
++            "end": segment.end,
++            "text": segment.text,
++            "words": [
++                {"word": w.word, "start": float(w.start), "end": float(w.end), "probability": w.probability}
++                for w in segment.words or []
++            ],
++        }
++        for segment in segments
++    ]
++    return {
++        "segments": result_segments,
++        "text": "".join(s["text"] for s in result_segments),
++        "language": info.language,
++    }
++
++
+ def transcribe_with_whisper(
+     video_path: Path, model_name: str = "base", language: Optional[str] = None
+ ) -> Dict[str, Any]:
+@@ -195,8 +239,12 @@ def transcribe_with_whisper(
+     ``en_us`` are reduced to the ISO 639-1 base Whisper expects.
+     """
+     audio_path = _prepare_audio_for_transcription(video_path)
+-    model = _get_whisper_model(model_name)
+     whisper_language = language.split("_", 1)[0] if language else None
++    try:
++        return _transcribe_with_faster_whisper(audio_path, model_name, whisper_language)
++    except ImportError:
++        logger.info("faster-whisper not installed; using openai-whisper")
++    model = _get_whisper_model(model_name)
+     logger.info(
+         "Starting Whisper transcription with model: %s (language: %s)",
+         model_name,
+diff --git a/backend/src/workers/tasks.py b/backend/src/workers/tasks.py
+index b262834..b1c80ed 100644
+--- a/backend/src/workers/tasks.py
++++ b/backend/src/workers/tasks.py
+@@ -197,6 +197,9 @@ async def refresh_social_metrics(ctx: Dict[str, Any]) -> Dict[str, Any]:
+ 
+ 
+ from ..services.editor_service import prepare_editor, export_editor, combine_editor
++from ..services.narration_service import narrate_clip_job
++from ..services.studio_service import studio_render_job
++from ..services.monitor_service import auto_cut_channels
+ from ..services.clip_export_service import (
+     CLIP_EXPORT_JOB_TIMEOUT_SECONDS,
+     export_clip_preset,
+@@ -228,6 +231,9 @@ class WorkerSettings:
+         # Results are not kept so a finished job's id ("social:{post}:{attempt}")
+         # frees up; a dead job's post is failed by the stale-publishing sweep.
+         func(publish_social_post, timeout=PUBLISH_JOB_TIMEOUT_SECONDS, keep_result=0),
++        # Voice synthesis is slow on CPU; one try, the status key reports failures.
++        func(narrate_clip_job, timeout=3600, max_tries=1),
++        func(studio_render_job, timeout=3600, max_tries=1),
+     ]
+     queue_name = "supoclip_tasks"
+     health_check_interval = 30
+@@ -252,4 +258,6 @@ class WorkerSettings:
+         cron(dispatch_scheduled_social_posts, second=0, timeout=300),
+         # Hourly: pull audience metrics back for the performance loop.
+         cron(refresh_social_metrics, minute=7, second=0, timeout=1800),
++        # New uploads of channels with auto-cut on (Em alta > Meus canais).
++        cron(auto_cut_channels, minute={12, 42}, second=0, timeout=600),
+     ]
+diff --git a/docker-compose.yml b/docker-compose.yml
+index 195b9d3..db60ec4 100644
+--- a/docker-compose.yml
++++ b/docker-compose.yml
+@@ -118,7 +118,14 @@ services:
+       - clips:/app/clips
+       - ./backend/fonts:/app/fonts
+       - ./backend/transitions:/app/transitions
++      # "Minhas vozes": recordings read by the voice-clone service.
++      - ./vozes:/vozes
++      # Background music library ("Minhas músicas"), e.g. YouTube Audio Library downloads.
++      - ./musicas:/musicas
++      # Per-channel assets (canais/<canal>/vinhetas/...).
++      - ./canais:/canais
+     environment:
++      - VOICE_CLONE_URL=http://voice-clone:3900
+       - PYTHONPATH=/app
+       - PYTHONUNBUFFERED=1
+       - SUPOCLIP_SERVICE=backend
+@@ -187,6 +194,7 @@ services:
+       - YOUTUBE_SOURCE_CACHE_TTL_SECONDS=${YOUTUBE_SOURCE_CACHE_TTL_SECONDS:-604800}
+       - APIFY_EXPENSIVE_FALLBACKS=${APIFY_EXPENSIVE_FALLBACKS:-false}
+       - LLM=${LLM:-}
++      - STUDIO_LLM=${STUDIO_LLM:-}
+       - OPENAI_API_KEY=${OPENAI_API_KEY}
+       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
+       - OPENROUTER_FALLBACK_MODEL=${OPENROUTER_FALLBACK_MODEL:-openai/gpt-6-luna}
+@@ -296,12 +304,16 @@ services:
+     platform: "${BACKEND_PLATFORM:-linux/amd64}"
+     command: [".venv/bin/arq", "src.workers.tasks.WorkerSettings"]
+     volumes:
++      - ./canais:/canais
+       - ./backend/src:/app/src
+       - uploads:/app/uploads
+       - clips:/app/clips
+       - ./backend/fonts:/app/fonts
+       - ./backend/transitions:/app/transitions
+     environment: &worker-environment
++      # Same voice service as the backend; without it workers fall back to
++      # host.docker.internal:3900, which may be another app's voice server.
++      - VOICE_CLONE_URL=http://voice-clone:3900
+       - PYTHONPATH=/app
+       - PYTHONUNBUFFERED=1
+       - SUPOCLIP_SERVICE=worker
+@@ -370,6 +382,7 @@ services:
+       - YOUTUBE_SOURCE_CACHE_TTL_SECONDS=${YOUTUBE_SOURCE_CACHE_TTL_SECONDS:-604800}
+       - APIFY_EXPENSIVE_FALLBACKS=${APIFY_EXPENSIVE_FALLBACKS:-false}
+       - LLM=${LLM:-}
++      - STUDIO_LLM=${STUDIO_LLM:-}
+       - OPENAI_API_KEY=${OPENAI_API_KEY}
+       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
+       - OPENROUTER_FALLBACK_MODEL=${OPENROUTER_FALLBACK_MODEL:-openai/gpt-6-luna}
+@@ -491,6 +504,7 @@ services:
+       - /var/log/nginx:/var/log/nginx:ro
+       - vector_data:/var/lib/vector
+     environment:
++      - VOICE_CLONE_URL=http://voice-clone:3900
+       # Vector 0.60+ only expands ${...} in its config with this set; without
+       # it the literal "${AXIOM_TOKEN}" is sent and Axiom answers Unauthorized.
+       - VECTOR_DANGEROUSLY_ALLOW_ENV_VAR_INTERPOLATION=true
+@@ -543,7 +557,18 @@ services:
+       timeout: 10s
+       retries: 3
+ 
++
++  voice-clone:
++    # Cloned narrator voices (Chatterbox Multilingual, CPU), independent of VTube.
++    build: ./voice-clone
++    container_name: supoclip-voice-clone
++    volumes:
++      - ./vozes:/vozes:ro
++      - voice_models:/modelos
++    restart: unless-stopped
++
+ volumes:
++  voice_models:
+   uploads:
+     driver: local
+   clips:
+diff --git a/frontend/messages/de/shell.json b/frontend/messages/de/shell.json
+index 4d74870..eede1da 100644
+--- a/frontend/messages/de/shell.json
++++ b/frontend/messages/de/shell.json
+@@ -4,6 +4,8 @@
+     "library": "Mediathek",
+     "social": "Social",
+     "analytics": "Analysen",
++    "studio": "Video von Grund auf",
++    "trending": "Im Trend",
+     "agents": "Agenten & API",
+     "settings": "Einstellungen",
+     "admin": "Verwaltung",
+diff --git a/frontend/messages/en/shell.json b/frontend/messages/en/shell.json
+index 1e25cf2..e85ae16 100644
+--- a/frontend/messages/en/shell.json
++++ b/frontend/messages/en/shell.json
+@@ -4,6 +4,8 @@
+     "library": "Library",
+     "social": "Social",
+     "analytics": "Analytics",
++    "studio": "Video from scratch",
++    "trending": "Trending",
+     "agents": "Agents & API",
+     "settings": "Settings",
+     "admin": "Admin",
+diff --git a/frontend/messages/es/shell.json b/frontend/messages/es/shell.json
+index 4df8289..ef75744 100644
+--- a/frontend/messages/es/shell.json
++++ b/frontend/messages/es/shell.json
+@@ -4,6 +4,8 @@
+     "library": "Biblioteca",
+     "social": "Redes",
+     "analytics": "Analíticas",
++    "studio": "Video desde cero",
++    "trending": "Tendencias",
+     "agents": "Agentes y API",
+     "settings": "Ajustes",
+     "admin": "Administración",
+diff --git a/frontend/messages/id/shell.json b/frontend/messages/id/shell.json
+index a6dedad..e00a8ad 100644
+--- a/frontend/messages/id/shell.json
++++ b/frontend/messages/id/shell.json
+@@ -4,6 +4,8 @@
+     "library": "Pustaka",
+     "social": "Sosial",
+     "analytics": "Analitik",
++    "studio": "Video dari nol",
++    "trending": "Trending",
+     "agents": "Agen & API",
+     "settings": "Pengaturan",
+     "admin": "Admin",
+diff --git a/frontend/messages/pt/shell.json b/frontend/messages/pt/shell.json
+index a5ef683..4a5e455 100644
+--- a/frontend/messages/pt/shell.json
++++ b/frontend/messages/pt/shell.json
+@@ -4,6 +4,8 @@
+     "library": "Biblioteca",
+     "social": "Redes",
+     "analytics": "Análises",
++    "studio": "Vídeo do zero",
++    "trending": "Em alta",
+     "agents": "Agentes e API",
+     "settings": "Configurações",
+     "admin": "Administração",
+diff --git a/frontend/messages/zh/shell.json b/frontend/messages/zh/shell.json
+index d403434..0f067d7 100644
+--- a/frontend/messages/zh/shell.json
++++ b/frontend/messages/zh/shell.json
+@@ -4,6 +4,8 @@
+     "library": "素材库",
+     "social": "社交",
+     "analytics": "数据分析",
++    "studio": "从零制作视频",
++    "trending": "热门",
+     "agents": "智能体与 API",
+     "settings": "设置",
+     "admin": "管理",
+diff --git a/frontend/src/app/list/page.tsx b/frontend/src/app/list/page.tsx
+index d04dde5..083eb95 100644
+--- a/frontend/src/app/list/page.tsx
++++ b/frontend/src/app/list/page.tsx
+@@ -1,5 +1,6 @@
+ "use client";
+ 
++import { StudioVideos } from "@/components/studio-videos";
+ import { useEffect, useState, useCallback, useRef } from "react";
+ import { useTranslations } from "next-intl";
+ import { ACTIVE_TASK_STATUSES, RESUMABLE_TASK_STATUSES } from "@/components/app/status-badge";
+@@ -436,6 +437,10 @@ export default function ListPage() {
+         </Alert>
+       )}
+ 
++      <div className="mt-6">
++        <StudioVideos heading="Vídeos do zero" showLink />
++      </div>
++
+       <div className="mt-6">
+         {isLoading ? (
+           <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+diff --git a/frontend/src/app/tasks/[id]/page.tsx b/frontend/src/app/tasks/[id]/page.tsx
+index f8b144b..bd476dc 100644
+--- a/frontend/src/app/tasks/[id]/page.tsx
++++ b/frontend/src/app/tasks/[id]/page.tsx
+@@ -8,6 +8,7 @@ import { toast } from "sonner";
+ import { useTaskProgress } from "@/hooks/use-task-progress";
+ import { StatusBadge, ACTIVE_TASK_STATUSES } from "@/components/app/status-badge";
+ import { getClipUrl, requestAction, EXPORT_PRESETS } from "@/lib/clip-actions";
++import { ClipToolsMenu } from "@/components/clip-tools-menu";
+ import { clipExportFilePath, pollClipExport, triggerFileDownload } from "@/lib/clip-export";
+ import { downloadAllClips } from "@/lib/clip-archive";
+ import { trackClipExport } from "@/lib/clip-export-tracking";
+@@ -897,6 +898,14 @@ export default function TaskPage() {
+         onDelete={readOnly ? undefined : () => { if (focusedClip) { setDeletingClipId(focusedClip.id); setFocusIndex(null); } }}
+         hookTypeLabel={getHookTypeLabel}
+         actions={focusedClip && task?.status === "completed" ? (
++          <>
++          {!readOnly && (
++            <ClipToolsMenu
++              taskId={task.id}
++              clipId={focusedClip.id}
++              onChanged={() => void fetchTaskStatus(0, 0, true)}
++            />
++          )}
+           <ClipPublishButton
+             taskId={task.id}
+             clip={focusedClip}
+@@ -904,6 +913,7 @@ export default function TaskPage() {
+             providers={socialProviders}
+             onChanged={loadSocialPosts}
+           />
++          </>
+         ) : null}
+       >
+         {focusedClip && (
+diff --git a/frontend/src/components/app/app-shell.tsx b/frontend/src/components/app/app-shell.tsx
+index 5ad471d..071da44 100644
+--- a/frontend/src/components/app/app-shell.tsx
++++ b/frontend/src/components/app/app-shell.tsx
+@@ -6,7 +6,7 @@ import { usePathname, useRouter } from "next/navigation";
+ import { useLocale, useTranslations } from "next-intl";
+ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+ import {
+-  ArrowRight, Bot, ChartColumn, CornerDownLeft, Film, LogOut, Plus, Search, Settings, Share2, Shield, Sparkles,
++  ArrowRight, Bot, ChartColumn, Clapperboard, CornerDownLeft, Film, Flame, LogOut, Plus, Search, Settings, Share2, Shield, Sparkles,
+ } from "lucide-react";
+ import { toast } from "sonner";
+ import { signOut, useSession } from "@/lib/auth-client";
+@@ -27,10 +27,12 @@ import { cn } from "@/lib/utils";
+ 
+ // `mobile: false` keeps an item out of the five-slot mobile tab bar.
+ // `social: true` items only show when social publishing is enabled for the user.
+-type NavItem = { href: string; labelKey: "create" | "library" | "social" | "analytics" | "agents" | "settings"; icon: typeof Film; match: (path: string) => boolean; mobile?: boolean; social?: boolean };
++type NavItem = { href: string; labelKey: "create" | "studio" | "trending" | "library" | "social" | "analytics" | "agents" | "settings"; icon: typeof Film; match: (path: string) => boolean; mobile?: boolean; social?: boolean };
+ 
+ const NAV: NavItem[] = [
+   { href: "/", labelKey: "create", icon: Sparkles, match: (p) => p === "/" },
++  { href: "/studio", labelKey: "studio", icon: Clapperboard, match: (p) => p.startsWith("/studio"), mobile: false },
++  { href: "/trending", labelKey: "trending", icon: Flame, match: (p) => p.startsWith("/trending"), mobile: false },
+   { href: "/list", labelKey: "library", icon: Film, match: (p) => p.startsWith("/list") || p.startsWith("/tasks") },
+   { href: "/settings/social", labelKey: "social", icon: Share2, match: (p) => p.startsWith("/settings/social"), social: true },
+   { href: "/analytics", labelKey: "analytics", icon: ChartColumn, match: (p) => p.startsWith("/analytics"), social: true },
+diff --git a/frontend/src/components/home-app.tsx b/frontend/src/components/home-app.tsx
+index d263e59..cbb8bcb 100644
+--- a/frontend/src/components/home-app.tsx
++++ b/frontend/src/components/home-app.tsx
+@@ -78,6 +78,15 @@ export default function HomeApp() {
+   const fileInputRef = useRef<HTMLInputElement | null>(null);
+   const urlInputRef = useRef<HTMLInputElement | null>(null);
+   const { data: session, isPending } = useSession();
++
++  // "Cortar" on the Em alta page links here with ?url=<video>.
++  useEffect(() => {
++    const shared = new URLSearchParams(window.location.search).get("url");
++    if (shared) {
++      setUrl(shared);
++      urlInputRef.current?.focus();
++    }
++  }, []);
+   const sourceType: "youtube" | "upload" = file ? "upload" : "youtube";
+ 
+   // Font customization states — null means "use the caption template's own value"
