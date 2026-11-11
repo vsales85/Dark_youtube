@@ -244,7 +244,9 @@ def etapa_sdxl(trab):
             # estilo escolhido em teste (Fooocus "sai-comic book" + "Caricature"): o mais proximo das referencias
             prompt_ = ("comic caricature, bold black outlines, flat colors, big head, big round white eyes with tiny pupils, thin arms. "
                        + _cena_e_ficha(prompt_))  # estilo primeiro (o modelo so le ~77 palavras) + ficha curta do personagem
-            neg_ = "photograph, photo, realistic, photorealistic, 3d, deformed, glitch, noisy, stock photo, " + NEGATIVO
+            prompt_ = prompt_.replace("comic caricature,", "full color comic caricature,", 1)
+            neg_ = ("black and white, monochrome, grayscale, sepia, desaturated, photograph, photo, realistic, photorealistic, 3d, "
+                    "deformed, glitch, noisy, stock photo, " + NEGATIVO)
         txt = {"prompt": prompt_, "negative_prompt": neg_}
         if comp is not None and not (tem_lora and p.get("lora") == "cartoon"):  # Compel anula o estilo LoRA no texto
             try:

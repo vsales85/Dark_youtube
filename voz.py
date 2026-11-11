@@ -18,6 +18,10 @@ VOZES_GEMINI = [("Charon", "Male"), ("Orus", "Male"), ("Fenrir", "Male"), ("Iape
 VOZ_CLONE_URL = config._env("VOZ_CLONE_URL", "http://localhost:3900")
 
 
+class CotaEsgotada(RuntimeError):
+    pass
+
+
 def _salvar_pcm(pcm, sr, arquivo):
     with wave.open(arquivo, "wb") as w:
         w.setnchannels(1); w.setsampwidth(2); w.setframerate(sr); w.writeframes(pcm)
@@ -29,16 +33,21 @@ def gemini(texto, voz, arquivo, estilo=None):
     chave = config._env("GEMINI_API_KEY")
     if not chave:
         raise RuntimeError("sem GEMINI_API_KEY no .env")
-    fala = f"{estilo}: {texto}" if estilo else texto
+    # idioma FIXO: sem isso, frases curtas saem com sotaque espanhol (o modelo adivinha o idioma)
+    instrucao = estilo or "Narre em portugues do Brasil, com sotaque brasileiro, tom de documentario"
+    fala = f"{instrucao}: {texto}"
     corpo = {"contents": [{"parts": [{"text": fala}]}],
              "generationConfig": {"responseModalities": ["AUDIO"],
-                                  "speechConfig": {"voiceConfig": {"prebuiltVoiceConfig": {"voiceName": voz.split(":")[-1]}}}}}
+                                  "speechConfig": {"languageCode": "pt-BR",
+                                                   "voiceConfig": {"prebuiltVoiceConfig": {"voiceName": voz.split(":")[-1]}}}}}
     erro = ""
     for tentativa in range(2):
         for m in MODELOS_TTS:
             try:
                 r = requests.post(f"https://generativelanguage.googleapis.com/v1beta/models/{m}:generateContent",
                                   headers={"x-goog-api-key": chave}, json=corpo, timeout=180)
+                if r.status_code == 429:  # cota do dia acabou: nao adianta tentar os outros modelos agora
+                    raise CotaEsgotada("cota diaria de voz do Gemini esgotada (volta amanha) - usando a voz reserva")
                 if r.status_code != 200:
                     erro = f"{m}: HTTP {r.status_code}"; continue
                 parte = r.json()["candidates"][0]["content"]["parts"][0]["inlineData"]
@@ -53,6 +62,8 @@ def gemini(texto, voz, arquivo, estilo=None):
                 except Exception:
                     pass
                 return arquivo
+            except CotaEsgotada:
+                raise
             except Exception as e:
                 erro = f"{m}: {str(e)[:80]}"
         time.sleep(4)
