@@ -1,0 +1,40 @@
+# ===== SEGREDOS (nunca subir) =====
+.env
+token.json
+client_secret*.json
+*.pem
+*.key
+
+# ===== videos, projetos e dados gerados (pessoais / pesados) =====
+Para_Aprovar/
+Aprovados/
+Rejeitados/
+projetos/
+fila/
+fundos/
+canal/
+amostras/
+marca_canal/
+design/
+custos.jsonl
+*.mp4
+*.wav
+*.mp3
+Gemini_Generated_Image_*
+
+# ===== modelos e mapas (baixados pelo instalador) =====
+dados/
+*.safetensors
+*.gguf
+*.onnx
+*.tif
+
+# ===== Python / sistema =====
+__pycache__/
+*.pyc
+.venv/
+venv/
+.vscode/
+.idea/
+Thumbs.db
+desktop.ini

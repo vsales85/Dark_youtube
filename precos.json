@@ -1,0 +1,21 @@
+{
+  "cotacao_usd_brl": 5.5,
+  "texto": {
+    "default": [
+      0.3,
+      2.5
+    ],
+    "lite": [
+      0.1,
+      0.4
+    ],
+    "pro": [
+      1.25,
+      10.0
+    ]
+  },
+  "imagem_por_unidade": {
+    "default": 0.039,
+    "pro": 0.134
+  }
+}

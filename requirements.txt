@@ -1,0 +1,29 @@
+# Dark Studio - dependencias (Python 3.12)
+# O PyTorch NAO esta aqui: o instalador escolhe a versao certa para a placa (NVIDIA / AMD / so processador).
+
+# painel, roteiro e publicacao
+google-genai==3.0.0
+python-dotenv==1.2.4
+requests==2.34.2
+google-api-python-client==2.201.0
+google-auth-oauthlib==1.5.0
+edge-tts==7.3.1
+
+# video e imagem
+imageio-ffmpeg==0.8.1
+pillow==12.2.0
+numpy==2.4.4
+
+# mapas animados (Short de historia) - roda so no processador
+skia-python==144.1
+shapely==2.2.0
+Unidecode==1.4.0
+
+# imagens geradas no PC (opcional, precisa de placa de video)
+diffusers==0.42.1
+transformers==5.8.0
+accelerate==1.13.0
+safetensors==0.8.0
+huggingface_hub>=1.33,<2
+compel==2.5.1
+opencv-python-headless==5.0.0.93
