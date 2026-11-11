@@ -305,7 +305,15 @@ def refinar_rostos(pipe, vae, img, prompt, g):
                    num_inference_steps=10, guidance_scale=1.2, generator=g, output_type="latent").images
         with torch.no_grad():
             novo = vae.decode(lat.to(vae.dtype) / vae.config.scaling_factor).sample
+        if not torch.isfinite(novo).all():  # meia precisao estourou -> nao cola lixo no rosto
+            log("rosto descartado (calculo estourou)"); continue
         novo = pipe.image_processor.postprocess(novo.float(), output_type="pil")[0].resize((lado, lado), Image.LANCZOS)
+        import numpy as _np
+        ref = _np.asarray(img.crop((x0, y0, x0 + lado, y0 + lado)).resize((64, 64)), dtype=_np.float32)
+        nov = _np.asarray(novo.resize((64, 64)), dtype=_np.float32)
+        listras = _np.abs(_np.diff(nov.mean(axis=(1, 2)))).max()
+        if _np.abs(ref - nov).mean() > 38 or listras > 45:  # rosto refeito ficou corrompido (cores/listras) -> mantem o original
+            log("rosto descartado (saiu corrompido)"); continue
         m = Image.new("L", (lado, lado), 0)
         ImageDraw.Draw(m).ellipse([lado * .12, lado * .08, lado * .88, lado * .92], fill=255)
         img.paste(novo, (x0, y0), m.filter(ImageFilter.GaussianBlur(lado // 12)))
