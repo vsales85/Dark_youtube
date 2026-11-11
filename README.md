@@ -39,6 +39,16 @@ O roteiro é escrito pelo **Gemini (grátis)**; voz, desenho e montagem rodam **
 4. **Dê dois cliques em `ABRIR_PAINEL.bat`** → o painel abre em <http://localhost:8765>.
 5. (Opcional) **Imagens geradas no PC**: `.venv\Scripts\python baixar_dados.py --imagens` (~7 GB).
 
+## Roteiro sem travar (opcional, recomendado)
+
+O roteiro é escrito pelo **Gemini**. Se ele estiver sobrecarregado ou a cota do dia acabar, o app usa
+**automaticamente** um modelo no próprio PC com o [Ollama](https://ollama.com) (grátis, sem limite, sem internet):
+
+1. Instale o Ollama.
+2. No terminal: `ollama pull qwen2.5:14b` (~9 GB; com pouca memória de vídeo use `qwen2.5:7b` e coloque `OLLAMA_MODELO=qwen2.5:7b` no `.env`).
+
+O modelo é descarregado da placa logo após escrever, para não disputar com o gerador de imagens.
+
 ## Publicar no YouTube (opcional)
 
 1. No [Google Cloud Console](https://console.cloud.google.com/), crie um projeto, ative a **YouTube Data API v3** e crie uma credencial **OAuth → App para computador**.

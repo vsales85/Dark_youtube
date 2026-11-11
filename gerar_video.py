@@ -108,9 +108,44 @@ def tamanho():
 
 
 # ---------------------------------------------------------------- IA de texto
+def ollama_json(prompt, etapa):
+    """Reserva AUTOMATICA: escreve com o Ollama no proprio PC (gratis, sem limite, sem internet).
+    Descarrega o modelo da placa logo depois (keep_alive=0) para nao disputar com o gerador de imagens."""
+    import requests, config
+    url = config._env("OLLAMA_URL", "http://localhost:11434")
+    modelo = config._env("OLLAMA_MODELO", "qwen2.5:14b")
+    try:
+        requests.get(f"{url}/api/version", timeout=3)
+    except Exception:  # liga o Ollama se estiver instalado e desligado
+        exe = config._env("OLLAMA_EXE", os.path.join(os.environ.get("LOCALAPPDATA", ""), "Programs", "Ollama", "ollama.exe"))
+        if not os.path.exists(exe):
+            raise RuntimeError("Ollama nao instalado")
+        subprocess.Popen([exe, "serve"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        time.sleep(6)
+    print(f"   usando o Ollama ({modelo}) no PC para escrever...", flush=True)
+    r = requests.post(f"{url}/api/chat", timeout=900, json={
+        "model": modelo, "stream": False, "format": "json", "keep_alive": 0,
+        "options": {"temperature": 0.8, "num_ctx": 16384},
+        "messages": [{"role": "system", "content": "Responda SOMENTE com JSON valido, em portugues do Brasil. Seja fiel aos fatos historicos."},
+                     {"role": "user", "content": prompt}]})
+    r.raise_for_status()
+    custos_registro = {"modelo": f"ollama:{modelo}", "etapa": etapa}
+    try:
+        custos.registrar(f"ollama:{modelo}", None, etapa=etapa)
+    except Exception:
+        pass
+    return json.loads(r.json()["message"]["content"])
+
+
 def pedir_json(prompt, etapa):
-    for _ in range(3):
-        for m in MODELOS_TEXTO:
+    inicio = time.time()
+    for rodada in range(3):
+        if rodada >= 1 or time.time() - inicio > 240:  # Gemini falhou/demorou: tenta o Ollama no PC antes de esperar mais
+            try:
+                return ollama_json(prompt, etapa)
+            except Exception as e:
+                print(f"   ! Ollama indisponivel ({str(e)[:70]}) - voltando a tentar o Gemini", flush=True)
+        for m in list(MODELOS_TEXTO):
             try:
                 r = client.models.generate_content(
                     model=m, contents=prompt,
