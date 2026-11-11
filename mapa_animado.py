@@ -217,6 +217,13 @@ def _ease(t):
     return t * t * (3 - 2 * t)
 
 
+def _quando(k, n, dur):
+    """Momento de entrada do elemento k de n, espalhado pela cena (algo novo a cada ~1-2s)."""
+    if n <= 1:
+        return 0.2
+    return 0.2 + k * max(0.35, min(1.6, dur * 0.7 / n))
+
+
 def _pop(t, dur=0.35):
     """Entrada com "mola" (escala 0 -> 1.08 -> 1)."""
     if t <= 0:
@@ -395,7 +402,7 @@ class Renderizador:
             if rt.get("lon") is None:
                 continue
             x, y = cam.xy(rt["lon"], rt["lat"])
-            a = _pop(t - 0.3 - k * 0.15)
+            a = _pop(t - _quando(k, len(cena.get("rotulos") or []), dur) - 0.1)
             if a <= 0:
                 continue
             c.drawCircle(x, y, 9 * a, skia.Paint(Color=skia.ColorSetARGB(255, 230, 40, 40), AntiAlias=True))
@@ -408,7 +415,7 @@ class Renderizador:
             if not img or ic.get("lon") is None:
                 continue
             x, y = cam.xy(ic["lon"], ic["lat"])
-            s = W * 0.13 * _pop(t - 0.35 - k * 0.2)
+            s = W * 0.13 * _pop(t - _quando(k + 1, len(cena.get("icones") or []) + 1, dur))
             if s > 1:
                 c.drawImageRect(img, skia.Rect.MakeXYWH(x - s / 2, y - s / 2, s, s), skia.SamplingOptions(skia.FilterMode.kLinear))
 
@@ -523,7 +530,7 @@ class Renderizador:
         posx = {"esq": 0.2, "centro": 0.5, "dir": 0.8}
         lados = ["esq", "dir", "centro", "esq"]
         for k, p in enumerate(pers):
-            tk = t - 0.15 - k * 0.25
+            tk = t - _quando(k, len(pers), dur)
             if tk < 0:
                 continue
             lado = p.get("lado") or lados[k]
@@ -720,7 +727,10 @@ Regras:
 - Se passar de 3 minutos: estrutura de documentario curto - gancho, contexto, 3 a 5 viradas com mini-ganchos a cada ~40s,
   climax e conclusao; peca ao publico para comentar no final.
 - FATOS CORRETOS. Se houver versoes diferentes, diga "segundo os relatos" - nunca invente datas, numeros ou citacoes.
-- Divida em {nc} a {nc2} cenas de 1 a 2 frases curtas cada. Cada cena muda algo no mapa.
+- RITMO DE SHORT (retencao): divida em {nc} a {nc2} cenas de UMA frase curta cada (~3 a 4 segundos falados).
+  TODA cena traz algo visual NOVO (camera em outro lugar, personagem entrando, icone, caixa, bandeira, rota...).
+  No meio do video, coloque uma VIRADA ("so que...", "mas ninguem esperava...") para segurar quem ia sair.
+- FINAL EM LOOP: a ultima frase deve emendar naturalmente com a primeira (quem assiste de novo nem percebe o corte).
 - Mapa: camera com lon/lat REAIS do centro e "graus" = largura visivel em graus de longitude
   (continente ~60, pais ~16, estado/regiao ~8; NUNCA menos que 6 - para uma cidade use 7 e marque com "rotulos").
 - TODA cena precisa de pelo menos 1 elemento visual NOVO alem do mapa (destaque, fronteira, rota, rotulo, icone,
@@ -780,7 +790,7 @@ def roteiro(cfg):
     seg = int(cfg.get("duracao") or 60)
     import avatares, objetos
     return g.pedir_json(PROMPT.format(tipos="|".join(avatares.FIGURINOS), objetos="|".join(objetos.DESENHOS), canal=cfg.get("canal") or "Bravura Esquecida", tema=cfg.get("tema") or "um episodio pouco conhecido da historia do Brasil",
-                                      seg=seg, pal=int(seg * 2.6), nc=max(6, seg // 7), nc2=max(9, seg // 5)), "roteiro_mapa")
+                                      seg=seg, pal=int(seg * 2.6), nc=max(8, seg // 4), nc2=max(12, seg // 3)), "roteiro_mapa")
 
 
 def com_personagens(rot):
@@ -803,6 +813,43 @@ Responda SOMENTE JSON: {{"cenas": [{{"cena": 0, "personagens": [{{"tipo": "", "n
         if isinstance(i, int) and 0 <= i < len(rot["cenas"]):
             rot["cenas"][i]["personagens"] = item.get("personagens") or []
     return rot
+
+
+def _som(tipo, sr=24000):
+    """Efeitos sonoros sinteticos (livres): whoosh = ruido filtrado com varredura; pop = bolha curta."""
+    if tipo == "whoosh":
+        n = int(sr * 0.45); t = np.arange(n) / sr
+        ruido = np.random.default_rng(3).standard_normal(n)
+        env = np.sin(np.pi * t / t[-1]) ** 2
+        # filtro passa-banda que sobe (varredura) aproximado por media movel variavel
+        out = np.zeros(n); acc = 0.0
+        for i in range(n):
+            a = 0.02 + 0.25 * (i / n)
+            acc += a * (ruido[i] - acc); out[i] = acc
+        return (out / (np.abs(out).max() + 1e-6)) * env * 0.55
+    n = int(sr * 0.12); t = np.arange(n) / sr
+    f = 900 - 500 * t / t[-1]
+    return np.sin(2 * np.pi * np.cumsum(f) / sr) * np.exp(-t * 38) * 0.6
+
+
+def _mixar_efeitos(wav_narracao, eventos):
+    """Soma whoosh/pop na narracao (volume baixo, nunca encobre a voz)."""
+    import wave
+    with wave.open(wav_narracao) as w:
+        sr, nch, sw = w.getframerate(), w.getnchannels(), w.getsampwidth()
+        voz = np.frombuffer(w.readframes(w.getnframes()), dtype=np.int16).astype(np.float32) / 32768
+    if nch != 1 or sw != 2:
+        return
+    sons = {k: _som(k, sr) for k in ("whoosh", "pop")}
+    pista = np.zeros_like(voz)
+    for tipo, quando in eventos:
+        i = int(max(0.0, quando - (0.18 if tipo == "whoosh" else 0)) * sr)
+        s_ = sons[tipo][: max(0, len(pista) - i)]
+        pista[i:i + len(s_)] += s_ * (0.22 if tipo == "whoosh" else 0.16)
+    mix = np.clip(voz + pista, -1, 1)
+    with wave.open(wav_narracao, "wb") as w:
+        w.setnchannels(1); w.setsampwidth(2); w.setframerate(sr)
+        w.writeframes((mix * 32767).astype(np.int16).tobytes())
 
 
 # ------------------------------------------------------------------ montagem completa
@@ -853,6 +900,7 @@ def gerar(cfg, rot=None, pasta=None):
                              "-i", "-", "-c:v", "libx264", "-preset", "medium", "-crf", "18", "-pix_fmt", "yuv420p", "mapa.mp4"],
                             cwd=pasta, stdin=subprocess.PIPE)
     cam_ant, destaques = None, []
+    eventos = []
     t0 = time.time()
     for i, (c, d, pal) in enumerate(zip(cenas, duracoes, falas)):
         cm = c.get("camera") or {}
@@ -868,10 +916,20 @@ def gerar(cfg, rot=None, pasta=None):
                 x["_velho"] = (_norm(x.get("regiao")), x.get("tipo")) in velhos
             destaques = novos
         n = max(1, int(round(d * fps)))
+        inicio_cena = sum(duracoes[:i])
+        eventos.append(("whoosh", inicio_cena))
+        npers = len([p for p in (c.get("personagens") or []) if isinstance(p, dict)][:4])
+        for k in range(npers):
+            eventos.append(("pop", inicio_cena + _quando(k, npers, d)))
+        for chave in ("caixa", "documento", "retrato", "bandeira_tela"):
+            if c.get(chave):
+                eventos.append(("pop", inicio_cena + 0.4))
         for k in range(n):
             t = k / fps
             e = _ease(t / min(1.0, d * 0.5))
             zoom_lento = 1 - 0.04 * (t / d)
+            if d > 2.4:  # "punch-in": zoom rapido no meio da cena (sensacao de corte)
+                zoom_lento *= 1 - 0.07 * _ease((t - d * 0.5) / 0.22)
             cam = Camera(ini[0] + (alvo[0] - ini[0]) * e, ini[1] + (alvo[1] - ini[1]) * e,
                          (ini[2] + (alvo[2] - ini[2]) * e) * zoom_lento, W, H)
             img = rd.quadro(c, t, d, cam, destaques, pal)
@@ -885,14 +943,18 @@ def gerar(cfg, rot=None, pasta=None):
         print(f"PROGRESSO {i + 1}/{len(cenas)} animando", flush=True)
     proc.stdin.close(); proc.wait()
 
-    print("4/4 Montagem final (voz + trilha)...", flush=True)
+    print("4/4 Montagem final (voz + efeitos + trilha)...", flush=True)
+    try:
+        _mixar_efeitos(os.path.join(pasta, "narracao.wav"), eventos)
+    except Exception as e:
+        log(f"efeitos sonoros pulados: {str(e)[:80]}")
     musica, vol = g.faixa_musica() if cfg.get("musica", True) else (None, 0)
     if musica:
         filtro = (f"[2:a]volume={vol},afade=t=in:d=2,afade=t=out:st={max(0, total - 3):.2f}:d=3[m];"
-                  f"[m][1:a]sidechaincompress=threshold=0.04:ratio=6:release=400[md];[1:a][md]amix=inputs=2:duration=first:normalize=0[a]")
+                  f"[m][1:a]sidechaincompress=threshold=0.04:ratio=6:release=400[md];[1:a][md]amix=inputs=2:duration=first:normalize=0,loudnorm=I=-14:TP=-1.5:LRA=11[a]")
         args = ["-i", "mapa.mp4", "-i", "narracao.wav", *musica, "-t", f"{total:.2f}", "-filter_complex", filtro, "-map", "0:v", "-map", "[a]"]
     else:
-        args = ["-i", "mapa.mp4", "-i", "narracao.wav", "-map", "0:v", "-map", "1:a", "-shortest"]
+        args = ["-i", "mapa.mp4", "-i", "narracao.wav", "-af", "loudnorm=I=-14:TP=-1.5:LRA=11", "-map", "0:v", "-map", "1:a", "-shortest"]
     subprocess.run([ff, "-y", "-loglevel", "error", *args, "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "video.mp4"], cwd=pasta, check=True)
     for f in os.listdir(pasta):
         if f.startswith("voz") or f in ("mapa.mp4", "narracao.wav"):
