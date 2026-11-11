@@ -743,7 +743,9 @@ Regras:
 - RITMO DE SHORT (retencao): divida em {nc} a {nc2} cenas de UMA frase curta cada (~3 a 4 segundos falados).
   TODA cena traz algo visual NOVO (camera em outro lugar, personagem entrando, icone, caixa, bandeira, rota...).
   No meio do video, coloque uma VIRADA ("so que...", "mas ninguem esperava...") para segurar quem ia sair.
-- FINAL EM LOOP: a ultima frase deve emendar naturalmente com a primeira (quem assiste de novo nem percebe o corte).
+- FINAL COMPLETO (obrigatorio): as 2 ultimas cenas FECHAM a historia - a conclusao/resposta clara e uma frase de impacto,
+  terminando com uma pergunta ao publico para os comentarios. NUNCA termine com frase incompleta, dois-pontos ou reticencias.
+- Cada "fala" tem NO MAXIMO 12 palavras (cenas curtas = retencao alta).
 - Mapa: camera com lon/lat REAIS do centro e "graus" = largura visivel em graus de longitude
   (continente ~60, pais ~16, estado/regiao ~8; NUNCA menos que 6 - para uma cidade use 7 e marque com "rotulos").
 - TODA cena precisa de pelo menos 1 elemento visual NOVO alem do mapa (destaque, fronteira, rota, rotulo, icone,
