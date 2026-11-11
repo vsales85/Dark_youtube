@@ -27,3 +27,4 @@ safetensors==0.8.0
 huggingface_hub>=1.33,<2
 compel==2.5.1
 opencv-python-headless==5.0.0.93
+peft==0.21.2

@@ -399,6 +399,9 @@ VISUAIS = {
     "pintura": ("Oil painting illustration", "visible brush strokes, dramatic chiaroscuro, classical painting style"),
     "noir": ("Black and white film noir still", "high contrast monochrome, hard shadows, 1940s cinema, grainy film"),
     "vintage": ("1970s analog film photo", "faded kodak colors, light leaks, heavy grain, retro atmosphere"),
+    # documentario em desenho (estilo LoRA "cartoon", licenca MIT) - caricatura, contorno preto, cores chapadas
+    "cartoon_doc": ("2d cartoon illustration, editorial caricature, thick black outlines, flat cel colors",
+                    "big heads and thin legs, expressive faces, detailed illustrated background, documentary animation style"),
 }
 
 
@@ -424,6 +427,7 @@ def lote_local(cenas, rot, pasta, forcar=False):
     existentes = {os.path.splitext(f)[0].lower() for f in os.listdir(dest)}
     pedidos = [{"prompt": prompt_imagem(c, rot), "saida": os.path.join(dest, f"cena{i+1:02d}.png"),
                 "proporcao": tela()[0], "seed": semente(c, rot, i),
+                 **({"lora": "cartoon", "rosto": False} if (CFG.get("visual") or "") == "cartoon_doc" else {}),
                  "qualidade": CFG.get("qualidade") or "cinematografico"}
                for i, c in enumerate(cenas) if forcar or f"cena{i+1:02d}" not in existentes]
     th = (rot.get("thumb") or {}).get("prompt")  # imagem exclusiva para a miniatura, no mesmo lote

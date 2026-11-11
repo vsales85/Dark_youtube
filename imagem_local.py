@@ -170,6 +170,7 @@ def _gerar_lote(pedidos):
 
 # ---------------------------------------------------------------- motor RAPIDO (padrao): RealVisXL V5 Lightning
 SDXL_REPO, SDXL_ARQ = "SG161222/RealVisXL_V5.0_Lightning", "RealVisXL_V5.0_Lightning_fp16.safetensors"
+LORA_CARTOON = ("ntc-ai/SDXL-LoRA-slider.cartoon", "cartoon.safetensors")  # licenca MIT
 SDXL_TAM = {"16:9": (1344, 768), "9:16": (768, 1344), "1:1": (1024, 1024)}
 NEGATIVO = ("text, watermark, logo, signature, cartoon, anime, 3d render, illustration, deformed, disfigured, "
             "bad anatomy, extra fingers, extra limbs, blurry, low quality, jpeg artifacts, duplicate person, clone, twins, "
@@ -198,6 +199,15 @@ def etapa_sdxl(trab):
     vae = pipe.vae.to("cuda")  # fp16 + pedacos: ~1s por imagem (fp32 transbordava a placa: ~60s)
     vae.enable_tiling()
     # Compel: prompts longos sem corte em 77 tokens (a ficha inteira dos personagens chega ao modelo)
+    # estilo "cartoon documentario": LoRA (MIT) carregado so se algum pedido usar
+    tem_lora = False
+    if any(p.get("lora") == "cartoon" for p in json.load(open(os.path.join(trab, "pedidos.json"), encoding="utf-8"))):
+        try:
+            pipe.load_lora_weights(hf_hub_download(LORA_CARTOON[0], LORA_CARTOON[1]), adapter_name="cartoon")
+            tem_lora = True
+            log("estilo cartoon carregado")
+        except Exception as e:
+            log(f"estilo cartoon indisponivel ({str(e)[:60]}) - seguindo sem")
     comp = None
     try:
         from compel import Compel, ReturnedEmbeddingsType
@@ -215,12 +225,23 @@ def etapa_sdxl(trab):
         w, h = SDXL_TAM.get(p.get("proporcao", "16:9"), SDXL_TAM["16:9"])
         g = torch.Generator("cuda").manual_seed(int(p.get("seed") or i))
         torch.cuda.empty_cache()
+        if tem_lora:
+            if p.get("lora") == "cartoon":
+                pipe.enable_lora(); pipe.set_adapters(["cartoon"], adapter_weights=[4.0])
+            else:
+                pipe.disable_lora()
         q = MODOS.get(p.get("qualidade") or "cinematografico", MODOS["cinematografico"])
-        txt = {"prompt": p["prompt"], "negative_prompt": NEGATIVO}
-        if comp is not None:
+        prompt_, neg_ = p["prompt"], NEGATIVO
+        if tem_lora and p.get("lora") == "cartoon":  # estilo vem PRIMEIRO e foto/realismo proibidos
+            prompt_ = ("simple 2d adult animated cartoon style, thick uniform black outlines, flat colors with minimal shading, "
+                       "characters with big round heads, large white eyes with small dot pupils, thin noodle arms, simple shapes. " + prompt_)
+            neg_ = ("photo, photorealistic, realistic, 3d render, painting, oil painting, detailed skin texture, realistic proportions, "
+                    "anime, manga, " + NEGATIVO)
+        txt = {"prompt": prompt_, "negative_prompt": neg_}
+        if comp is not None and not (tem_lora and p.get("lora") == "cartoon"):  # Compel anula o estilo LoRA no texto
             try:
                 with torch.no_grad():
-                    pe, pp = comp(p["prompt"]); ne, npp = comp(NEGATIVO)
+                    pe, pp = comp(prompt_); ne, npp = comp(neg_)
                     vazio = comp("")[0]
                     while ne.shape[1] < pe.shape[1]: ne = torch.cat([ne, vazio], 1)  # iguala os tamanhos (blocos de 77)
                     while pe.shape[1] < ne.shape[1]: pe = torch.cat([pe, vazio], 1)
@@ -228,7 +249,7 @@ def etapa_sdxl(trab):
             except Exception as e:
                 log(f"compel falhou ({str(e)[:60]}) - usando prompt normal")
         lat = pipe(**txt, width=w, height=h, num_inference_steps=q["passos"],
-                   guidance_scale=q["forca"], generator=g, output_type="latent").images
+                   guidance_scale=max(q["forca"], 1.5) if p.get("lora") == "cartoon" else q["forca"], generator=g, output_type="latent").images
         torch.cuda.synchronize()
         t_ger = time.time() - t1
         if t_ger < MIN_GERAR_S:  # impossivel gerar uma imagem real tao rapido: a placa entrou em falha
