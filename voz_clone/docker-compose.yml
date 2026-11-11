@@ -1,0 +1,14 @@
+# Voz clonada do Dark Studio (Chatterbox Multilingual, licenca MIT) - roda no processador, sem placa de video.
+# Ligar:  cd voz_clone  &&  docker compose up -d --build
+# Suas gravacoes de referencia ficam em ../vozes  (minha-voz.wav + minha-voz.json com {"nome": "...", "genero": "Male"})
+services:
+  voz-clone:
+    build: .
+    ports:
+      - "127.0.0.1:3900:3900"
+    volumes:
+      - ../vozes:/vozes:ro
+      - voz-modelos:/modelos
+    restart: unless-stopped
+volumes:
+  voz-modelos:

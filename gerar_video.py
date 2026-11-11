@@ -249,15 +249,17 @@ def voz_clonada(texto, mp3, voz_id, expressao=None):
 
 def gerar_voz(texto, arquivo, quem, expressao=None):
     chave = CFG["voz"] or tema_canal()["voz"]
-    if CFG["vozes_personagens"] and quem and quem != "narrador" and (quem in VOZES or str(quem).startswith("clone:")):
+    if CFG["vozes_personagens"] and quem and quem != "narrador" and (quem in VOZES or str(quem).startswith(("clone:", "gemini:"))):
         chave = quem
     mp3 = arquivo + ".mp3"
-    if str(chave).startswith("clone:"):  # voz clonada (sua voz) - se o servico falhar, cai para a voz padrao
+    if str(chave).startswith(("clone:", "gemini:")):  # Gemini TTS (direto pela chave) ou voz clonada local
         try:
-            voz_clonada(texto, mp3, chave[6:], expressao)
+            import voz as vozes
+            vozes.falar(texto, chave, mp3)
         except Exception as e:
-            print(f"   ! voz clonada indisponivel ({str(e)[:60]}) - usando Antonio")
+            print(f"   ! voz {chave} indisponivel ({str(e)[:60]}) - usando Antonio")
             chave = "masculina"
+            if os.path.exists(mp3): os.remove(mp3)
     voz, pitch, rate = VOZES.get(chave, VOZES["masculina"])
     rate += CFG["velocidade"] + (8 if CFG["modo"] in ("short", "novela") else 0)
     for tentativa in range(3 if not os.path.exists(mp3) else 0):

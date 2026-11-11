@@ -328,7 +328,7 @@ class H(BaseHTTPRequestHandler):
             sys.path.insert(0, BASE)
             import gerar_video as g
             k = unquote(os.path.basename(path))
-            if k not in g.VOZES and not (k.startswith("clone:") and any(v["voice_id"] == k[6:] for v in g.vozes_clonadas())):
+            if k not in g.VOZES and not k.startswith("gemini:") and not (k.startswith("clone:") and any(v["voice_id"] == k[6:] for v in g.vozes_clonadas())):
                 return self.send(404, "voz desconhecida", "text/plain")
             f = os.path.join(BASE, "amostras", f"voz_{k.replace(':', '_')}.wav")
             if not os.path.isfile(f):

@@ -1,0 +1,4 @@
+Coloque aqui suas vozes para clonar:
+  - minha-voz.wav   (10 a 30 segundos falando, sem musica, sem barulho)
+  - minha-voz.json  ({"nome": "Minha Voz", "genero": "Male"})
+So use vozes suas ou de quem autorizou. Estes arquivos NAO vao para o GitHub.

@@ -670,10 +670,12 @@ def _silencios(ff, wav):
 def narrar_vozes_ia(cenas, pasta, voz, ff):
     """Narra com voz do Gemini/clonada (via SupoClip) em grupos de ate ~290 letras e corta por cena nas pausas.
     Devolve [(duracao, palavras)] por cena; tempo das palavras proporcional ao tamanho delas."""
-    import supoclip, wave
+    import wave, voz as vozes
+    direto = voz.startswith("gemini:") or voz.startswith(("clone:", "vs:"))
+    limite = 650 if voz.startswith("gemini:") else 290  # Gemini direto aceita trechos maiores (menos pedidos)
     grupos, atual = [], []
     for i, c in enumerate(cenas):
-        if atual and sum(len(cenas[j]["fala"]) + 2 for j in atual) + len(c["fala"]) > 290:
+        if atual and sum(len(cenas[j]["fala"]) + 2 for j in atual) + len(c["fala"]) > limite:
             grupos.append(atual); atual = []
         atual.append(i)
     if atual:
@@ -681,9 +683,19 @@ def narrar_vozes_ia(cenas, pasta, voz, ff):
     res = [None] * len(cenas)
     for gi, grp in enumerate(grupos):
         texto = " ... ".join(cenas[j]["fala"].strip() for j in grp)  # pausa entre cenas
-        st, _, audio = supoclip.chamar("POST", "/tasks/studio/sample", {"voice": voz, "text": texto}, timeout=300)
-        if st != 200:
-            raise RuntimeError(f"voz {voz} falhou ({st}): {audio[:120]!r}")
+        audio = None
+        if direto:  # voz direto no app (Gemini TTS pela sua chave / voz clonada local)
+            try:
+                tmp = os.path.join(pasta, f"grupo{gi}_bruto.wav")
+                vozes.falar(texto, voz, tmp)
+                audio = open(tmp, "rb").read(); os.remove(tmp)
+            except Exception as e:
+                log(f"voz direta falhou ({str(e)[:70]}) - tentando pelo SupoClip")
+        if audio is None:
+            import supoclip
+            st, _, audio = supoclip.chamar("POST", "/tasks/studio/sample", {"voice": voz, "text": texto[:290]}, timeout=300)
+            if st != 200:
+                raise RuntimeError(f"voz {voz} falhou ({st}): {audio[:120]!r}")
         bruto = os.path.join(pasta, f"grupo{gi}.wav")
         open(bruto + ".src", "wb").write(audio)
         subprocess.run([ff, "-y", "-loglevel", "error", "-i", bruto + ".src", "-ar", "24000", "-ac", "1", bruto], check=True)
@@ -697,8 +709,9 @@ def narrar_vozes_ia(cenas, pasta, voz, ff):
         for k in tam[:-1]:
             acum += k
             alvo = total * acum / sum(tam)
-            perto = min(sil, key=lambda x: abs(x - alvo)) if sil else alvo
-            cortes.append(perto if abs(perto - alvo) < 1.8 else alvo)
+            validos = [x for x in sil if cortes[-1] + 0.5 < x < total - 0.4]  # pausa real, depois do corte anterior
+            perto = min(validos, key=lambda x: abs(x - alvo)) if validos else alvo
+            cortes.append(perto if abs(perto - alvo) < 1.8 else max(alvo, cortes[-1] + 0.5))
         cortes.append(total)
         for n, j in enumerate(grp):
             a, b = cortes[n], cortes[n + 1]
@@ -871,10 +884,12 @@ def gerar(cfg, rot=None, pasta=None):
     voz = cfg.get("voz") or "gemini:Charon"
     duracoes, falas = [], []
     pronto = None
-    if ":" in voz:  # voz do Gemini ou clonada (motor SupoClip)
+    if ":" in voz:  # voz do Gemini (direto pela chave) ou clonada (servico local)
         try:
-            if not _ligar_motor_vozes():
-                raise RuntimeError("SupoClip desligado")
+            if voz.startswith(("clone:", "vs:")):
+                import voz as vozes
+                if not vozes.vozes_clonadas():
+                    _ligar_motor_vozes()
             pronto = narrar_vozes_ia(cenas, pasta, voz, ff)
         except Exception as e:
             log(f"voz {voz} indisponivel ({str(e)[:80]}) - usando Antonio"); voz = "antonio_grave"

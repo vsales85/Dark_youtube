@@ -46,10 +46,22 @@ O roteiro é escrito pelo **Gemini (grátis)**; voz, desenho e montagem rodam **
 3. Rode uma vez `.venv\Scripts\python youtube.py` e autorize no navegador (gera `token.json`).
 4. Para miniaturas personalizadas, verifique o canal em <https://www.youtube.com/verify>.
 
-## Vozes
+## Vozes (tudo dentro do app)
 
-- **Edge TTS** (grátis, já funciona): Antonio, Francisca, Thalita e vozes multilíngues.
-- **Vozes do Gemini e voz clonada** (opcional): integração com o [SupoClip](https://github.com/) rodando no Docker — configure `SUPOCLIP_ENV` e `SUPOCLIP_USER_ID` no `.env`. Sem ele, o app usa as vozes do Edge automaticamente.
+| Voz | Como funciona | Precisa de |
+|---|---|---|
+| **Edge TTS** (Antonio, Francisca, Thalita…) | grátis, pela internet | nada |
+| **Gemini** (Charon, Kore, Puck… 30 vozes, as mais naturais) | `voz.py` chama o Gemini TTS com a **sua** `GEMINI_API_KEY` | a mesma chave do roteiro |
+| **Voz clonada** (sua voz) | Chatterbox (MIT) rodando **no seu PC**, pasta `voz_clone/` | Docker Desktop |
+
+**Voz clonada — passo a passo**
+1. Instale o [Docker Desktop](https://www.docker.com/products/docker-desktop/).
+2. Grave 10–30 s da sua voz (sem música/ruído) e salve em `vozes/minha-voz.wav`, com `vozes/minha-voz.json` = `{"nome": "Minha Voz", "genero": "Male"}`.
+3. No terminal: `cd voz_clone` e `docker compose up -d --build` (1ª vez demora; baixa o modelo ~2 GB).
+4. A voz aparece no painel em **Voz do narrador → Minhas vozes**.
+
+Se uma voz de IA falhar (sem cota/serviço desligado), o app usa o Edge automaticamente — o vídeo nunca trava.
+Só clone vozes suas ou de quem autorizou.
 
 ## Estrutura
 
@@ -60,6 +72,8 @@ O roteiro é escrito pelo **Gemini (grátis)**; voz, desenho e montagem rodam **
 | `mapa_animado.py` | motor dos vídeos de mapa (Skia + FFmpeg) |
 | `avatares.py` / `objetos.py` | bonequinhos, veículos, construções, animais e astros |
 | `imagem_local.py` | geração de imagens no PC (RealVisXL, opcional) |
+| `voz.py` | vozes do Gemini (TTS) e voz clonada |
+| `voz_clone/` | serviço local de clonagem de voz (Docker) |
 | `youtube.py` / `seo.py` | publicação e textos de SEO |
 | `config.py` | caminhos (troque pelo `.env`, ex.: `DARK_MODELOS=D:\modelos`) |
 | `baixar_dados.py` | baixa mapas/fontes/modelos livres |

@@ -39,3 +39,8 @@ venv/
 Thumbs.db
 desktop.ini
 skill_remotion/
+
+# vozes pessoais (clonagem)
+vozes/*.wav
+vozes/*.mp3
+vozes/*.json
