@@ -12,14 +12,42 @@ O roteiro é escrito pelo **Gemini (grátis)**; voz, desenho e montagem rodam **
 
 ## Requisitos
 
-| | Mínimo | Para imagens geradas no PC |
+### 🗺️ Só vídeos de mapa animado (não precisa de placa de vídeo)
+| | Mínimo | Recomendado |
 |---|---|---|
-| Sistema | Windows 10/11 | Windows 10/11 |
-| Python | **3.12** ([download](https://www.python.org/downloads/) — marque *Add python.exe to PATH*) | 3.12 |
-| Memória | 8 GB | 16–32 GB |
-| Placa de vídeo | não precisa (mapa animado roda no processador) | NVIDIA ou AMD com 12–16 GB |
-| Disco | ~2 GB | +10 GB |
-| Internet | sim (roteiro, voz e 1º download dos mapas) | sim |
+| Sistema | Windows 10/11 64 bits | Windows 11 |
+| Processador | 4 núcleos | 8 núcleos |
+| Memória | 8 GB | 16 GB |
+| Disco | 2 GB | SSD |
+| Internet | sim (roteiro e voz) | — |
+
+Tempo por Short de 60 s: ~10 min (8 núcleos) · ~20–30 min (4–6 núcleos) · ~30–45 min (PC fraco).
+
+### 🎬 Também imagens geradas por IA (vídeos cinematográficos)
+| | Mínimo | Recomendado |
+|---|---|---|
+| Placa de vídeo | **12 GB** de memória de vídeo | 16 GB (NVIDIA é a mais fácil) |
+| Memória | 16 GB | 32 GB |
+| Disco | +10 GB | SSD |
+
+> Sem placa de 12 GB, **não use** o modo de imagens de IA — use só o mapa animado (funciona em qualquer PC).
+
+### 🎤 Também voz clonada
+Docker Desktop + 8 GB de memória a mais.
+
+## Alternativas (o app escolhe sozinho o que estiver disponível)
+
+| Etapa | Opção principal | Alternativa automática |
+|---|---|---|
+| Roteiro | Gemini (nuvem, grátis com limite diário) | **Ollama no PC** — modelo escolhido pela memória: 24 GB+ → `qwen2.5:14b`, 12–24 GB → `qwen2.5:7b`, <12 GB → `qwen2.5:3b` |
+| Voz | Gemini TTS (Charon e mais 29) | **Edge TTS** (grátis) — usada se o Gemini falhar |
+| Voz própria | Voz clonada (Docker, no PC) | Edge TTS |
+| Desenho do mapa | Processador (Skia) | — (não precisa de placa) |
+| Bandeiras/retratos | Wikimedia (1ª vez, depois ficam no PC) | Cor lisa, se estiver sem internet |
+| Imagens de IA | SDXL na placa (NVIDIA ou AMD) | Fotos de banco grátis (Pixabay/Openverse) |
+
+**PC fraco:** a geração roda em prioridade baixa (o PC continua usável) e deixa 1 núcleo livre; uma tarefa por vez.
+**Offline:** com o Ollama, o roteiro sai sem internet; a voz ainda precisa de internet (Edge/Gemini).
 
 ## Instalação (passo a passo)
 
@@ -37,7 +65,8 @@ O roteiro é escrito pelo **Gemini (grátis)**; voz, desenho e montagem rodam **
    GEMINI_API_KEY=sua_chave_aqui
    ```
 4. **Dê dois cliques em `ABRIR_PAINEL.bat`** → o painel abre em <http://localhost:8765>.
-5. (Opcional) **Imagens geradas no PC**: `.venv\Scripts\python baixar_dados.py --imagens` (~7 GB).
+5. (Opcional) **Roteiro sem internet**: instale o [Ollama](https://ollama.com) e rode `ollama pull qwen2.5:7b` (ou 14b/3b conforme a memória).
+6. (Opcional) **Imagens geradas no PC**: `.venv\Scripts\python baixar_dados.py --imagens` (~7 GB).
 
 ## Roteiro sem travar (opcional, recomendado)
 
