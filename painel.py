@@ -66,7 +66,8 @@ class Fila:
         with self.lock:
             j["status"], j["inicio"] = "rodando", datetime.datetime.now().isoformat(timespec="seconds"); self.salvar()
         with open(log, "w", encoding="utf-8") as fh:
-            self.proc = subprocess.Popen([sys.executable, *j["args"]], cwd=BASE, stdout=fh, stderr=subprocess.STDOUT, env=ENV)
+            self.proc = subprocess.Popen([sys.executable, *j["args"]], cwd=BASE, stdout=fh, stderr=subprocess.STDOUT, env=ENV,
+                                         creationflags=getattr(subprocess, "BELOW_NORMAL_PRIORITY_CLASS", 0))  # PC continua usavel
             t0 = time.time()
             while self.proc.poll() is None:
                 time.sleep(1)

@@ -108,12 +108,26 @@ def tamanho():
 
 
 # ---------------------------------------------------------------- IA de texto
+def modelo_por_memoria():
+    """PC com pouca memoria usa modelo menor (14B precisa de ~10 GB; 7B ~5 GB; 3B ~2,5 GB)."""
+    try:
+        import ctypes
+        class M(ctypes.Structure):
+            _fields_ = [("l", ctypes.c_ulong), ("c", ctypes.c_ulong), ("total", ctypes.c_ulonglong), ("livre", ctypes.c_ulonglong),
+                        ("a", ctypes.c_ulonglong), ("b", ctypes.c_ulonglong), ("d", ctypes.c_ulonglong), ("e", ctypes.c_ulonglong), ("f", ctypes.c_ulonglong)]
+        m = M(); m.l = ctypes.sizeof(M); ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(m))
+        gb = m.total / 2 ** 30
+    except Exception:
+        gb = 16
+    return "qwen2.5:14b" if gb >= 24 else "qwen2.5:7b" if gb >= 12 else "qwen2.5:3b"
+
+
 def ollama_json(prompt, etapa):
     """Reserva AUTOMATICA: escreve com o Ollama no proprio PC (gratis, sem limite, sem internet).
     Descarrega o modelo da placa logo depois (keep_alive=0) para nao disputar com o gerador de imagens."""
     import requests, config
     url = config._env("OLLAMA_URL", "http://localhost:11434")
-    modelo = config._env("OLLAMA_MODELO", "qwen2.5:14b")
+    modelo = config._env("OLLAMA_MODELO") or modelo_por_memoria()
     try:
         requests.get(f"{url}/api/version", timeout=3)
     except Exception:  # liga o Ollama se estiver instalado e desligado

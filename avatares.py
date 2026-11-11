@@ -195,9 +195,26 @@ def _braco(c, ox, oy, ang, comp, larg, roupa, pele, lw, aponta=False):
     return x2, y2
 
 
+def tipo_valido(nome):
+    """Aceita nomes parecidos da IA ('portugues' -> 'soldado_portugues', 'holandes' -> 'holandes_1630')."""
+    try:
+        from unidecode import unidecode
+        nome = unidecode(str(nome or ""))
+    except Exception:
+        pass
+    n = str(nome or "").strip().lower().replace(" ", "_").replace("-", "_")
+    n = "_".join(w for w in n.split("_") if w and w not in ("de", "da", "do", "das", "dos", "e", "o", "a"))
+    if n in FIGURINOS:
+        return n
+    candidatos = [k for k in FIGURINOS if n and (n in k or k in n)]
+    if candidatos:
+        return max(candidatos, key=len)  # o mais especifico ("soldado_portugues" antes de "soldado")
+    return "povo"
+
+
 def desenhar(c, pers, x, y, altura, t, semente=0, flag_fn=None):
     """Desenha o bonequinho com os PES em (x, y). t = segundos desde a entrada. flag_fn(nome) -> skia.Image da bandeira."""
-    tipo = pers.get("tipo") if pers.get("tipo") in FIGURINOS else "povo"
+    tipo = tipo_valido(pers.get("tipo"))
     fig = FIGURINOS[tipo]
     h = altura * fig.get("escala", 1.0)
     r = h * 0.30                                  # cabecao

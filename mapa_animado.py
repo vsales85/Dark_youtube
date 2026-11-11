@@ -912,7 +912,8 @@ def gerar(cfg, rot=None, pasta=None):
     rd = Renderizador(rot, W, H)
     fps = 30
     proc = subprocess.Popen([ff, "-y", "-loglevel", "error", "-f", "rawvideo", "-pix_fmt", "bgra", "-s", f"{W}x{H}", "-r", str(fps),
-                             "-i", "-", "-c:v", "libx264", "-preset", "medium", "-crf", "18", "-pix_fmt", "yuv420p", "mapa.mp4"],
+                             "-i", "-", "-c:v", "libx264", "-preset", "medium", "-crf", "18", "-threads", str(max(1, (os.cpu_count() or 2) - 1)),
+                             "-pix_fmt", "yuv420p", "mapa.mp4"],
                             cwd=pasta, stdin=subprocess.PIPE)
     cam_ant, destaques = None, []
     eventos = []
