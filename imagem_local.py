@@ -170,6 +170,14 @@ def _gerar_lote(pedidos):
 
 # ---------------------------------------------------------------- motor RAPIDO (padrao): RealVisXL V5 Lightning
 SDXL_REPO, SDXL_ARQ = "SG161222/RealVisXL_V5.0_Lightning", "RealVisXL_V5.0_Lightning_fp16.safetensors"
+def _cena_e_ficha(prompt):
+    """Para o cartoon (sem Compel): cena curta + ficha FIXA e curta de cada personagem (mesma cara em todas as cenas)."""
+    cena, _, resto = prompt.partition(". Characters (keep exactly this appearance): ")
+    fichas = resto.split(". Cinematic")[0].split(". 2d cartoon")[0]
+    curtas = "; ".join(f.strip()[:90] for f in fichas.split(";") if f.strip())[:180]
+    return cena[:170] + (". " + curtas if curtas else "")
+
+
 LORA_CARTOON = ("ntc-ai/SDXL-LoRA-slider.cartoon", "cartoon.safetensors")  # licenca MIT
 SDXL_TAM = {"16:9": (1344, 768), "9:16": (768, 1344), "1:1": (1024, 1024)}
 NEGATIVO = ("text, watermark, logo, signature, cartoon, anime, 3d render, illustration, deformed, disfigured, "
@@ -235,7 +243,7 @@ def etapa_sdxl(trab):
         if tem_lora and p.get("lora") == "cartoon":  # estilo vem PRIMEIRO e foto/realismo proibidos
             # estilo escolhido em teste (Fooocus "sai-comic book" + "Caricature"): o mais proximo das referencias
             prompt_ = ("comic caricature, bold black outlines, flat colors, big head, big round white eyes with tiny pupils, thin arms. "
-                       + prompt_.split(". Characters")[0][:260])  # estilo primeiro (o modelo so le ~77 palavras)
+                       + _cena_e_ficha(prompt_))  # estilo primeiro (o modelo so le ~77 palavras) + ficha curta do personagem
             neg_ = "photograph, photo, realistic, photorealistic, 3d, deformed, glitch, noisy, stock photo, " + NEGATIVO
         txt = {"prompt": prompt_, "negative_prompt": neg_}
         if comp is not None and not (tem_lora and p.get("lora") == "cartoon"):  # Compel anula o estilo LoRA no texto
