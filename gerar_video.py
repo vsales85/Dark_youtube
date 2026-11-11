@@ -296,6 +296,9 @@ def voz_clonada(texto, mp3, voz_id, expressao=None):
     open(mp3, "wb").write(r.content)
 
 
+VOZ_CAIU = False
+
+
 def gerar_voz(texto, arquivo, quem, expressao=None):
     chave = CFG["voz"] or tema_canal()["voz"]
     if CFG["vozes_personagens"] and quem and quem != "narrador" and (quem in VOZES or str(quem).startswith(("clone:", "gemini:"))):
@@ -307,6 +310,8 @@ def gerar_voz(texto, arquivo, quem, expressao=None):
             vozes.falar(texto, chave, mp3)
         except Exception as e:
             print(f"   ! voz {chave} indisponivel ({str(e)[:60]}) - usando Antonio")
+            global VOZ_CAIU
+            VOZ_CAIU = True
             chave = "masculina"
             if os.path.exists(mp3): os.remove(mp3)
     voz, pitch, rate = VOZES.get(chave, VOZES["masculina"])
@@ -697,8 +702,16 @@ def montar(rot, nome=None, pasta=None):
 
     cenas, duracoes = rot["cenas"], []
     print("2/4 Narracao...", flush=True)
+    global VOZ_CAIU
+    VOZ_CAIU = False
     for i, c in enumerate(cenas):
         duracoes.append(gerar_voz(c["narracao"], os.path.join(pasta, f"voz{i}.wav"), voz_do_personagem(c.get("voz"), rot)))
+    if VOZ_CAIU and str(CFG.get("voz") or tema_canal()["voz"]).startswith(("gemini:", "clone:")):
+        # a voz de IA caiu no meio (cota/servico): refaz TODAS as cenas com a mesma voz reserva (nada de vozes misturadas)
+        print("   voz de IA indisponivel em parte das cenas - refazendo a narracao inteira com a voz reserva", flush=True)
+        CFG["voz"] = "antonio_grave"
+        duracoes = [gerar_voz(c["narracao"], os.path.join(pasta, f"voz{i}.wav"), voz_do_personagem(c.get("voz"), rot))
+                    for i, c in enumerate(cenas)]
     with wave.open(os.path.join(pasta, "narracao.wav"), "wb") as out:
         for i in range(len(cenas)):
             with wave.open(os.path.join(pasta, f"voz{i}.wav")) as w:
