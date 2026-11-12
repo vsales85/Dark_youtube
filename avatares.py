@@ -184,16 +184,27 @@ def _braco(c, ox, oy, ang, comp, larg, roupa, pele, lw, aponta=False):
     p = skia.Path(); p.moveTo(ox, oy); p.lineTo(x2, y2)
     c.drawPath(p, skia.Paint(Color=TINTA, AntiAlias=True, Style=skia.Paint.kStroke_Style, StrokeWidth=larg + lw * 2, StrokeCap=skia.Paint.kRound_Cap))
     c.drawPath(p, skia.Paint(Color=_cor(roupa), AntiAlias=True, Style=skia.Paint.kStroke_Style, StrokeWidth=larg, StrokeCap=skia.Paint.kRound_Cap))
-    # mao (com dedo indicador quando aponta)
     m = larg * 0.62
     if aponta:
-        dx, dy = math.cos(ang), math.sin(ang)
-        dedo = skia.Path(); dedo.moveTo(x2, y2); dedo.lineTo(x2 + dx * m * 1.9, y2 + dy * m * 1.9)
-        c.drawPath(dedo, skia.Paint(Color=TINTA, AntiAlias=True, Style=skia.Paint.kStroke_Style, StrokeWidth=m * 0.75 + lw * 2, StrokeCap=skia.Paint.kRound_Cap))
-        c.drawPath(dedo, skia.Paint(Color=_cor(pele), AntiAlias=True, Style=skia.Paint.kStroke_Style, StrokeWidth=m * 0.75, StrokeCap=skia.Paint.kRound_Cap))
+        # mao apontando SEM ambiguidade: punho grande + polegar por cima + indicador curto e grosso,
+        # sempre na horizontal ou levemente para baixo (nunca para cima)
+        a_dedo = min(max(ang, 0.0), 0.35)
+        dx, dy = math.cos(a_dedo), math.sin(a_dedo)
+        punho = m * 1.15
+        dedo = skia.Path(); dedo.moveTo(x2, y2); dedo.lineTo(x2 + dx * punho * 1.55, y2 + dy * punho * 1.55)
+        c.drawPath(dedo, skia.Paint(Color=TINTA, AntiAlias=True, Style=skia.Paint.kStroke_Style, StrokeWidth=punho * 0.95 + lw * 2, StrokeCap=skia.Paint.kRound_Cap))
+        c.drawPath(dedo, skia.Paint(Color=_cor(pele), AntiAlias=True, Style=skia.Paint.kStroke_Style, StrokeWidth=punho * 0.95, StrokeCap=skia.Paint.kRound_Cap))
+        c.drawCircle(x2, y2, punho, _fill(pele)); c.drawCircle(x2, y2, punho, _linha(lw))
+        # polegar: bolinha encostada em cima do punho
+        px_, py_ = x2 + dx * punho * 0.35 - dy * punho * 0.75, y2 + dy * punho * 0.35 - dx * punho * 0.75
+        c.drawCircle(px_, py_, punho * 0.42, _fill(pele)); c.drawCircle(px_, py_, punho * 0.42, _linha(lw * 0.8))
+        # dobras dos outros dedos (deixa claro que estao fechados)
+        for k in (-0.35, 0.05):
+            c.drawLine(x2 - dy * punho * k - dx * punho * 0.2, y2 + dx * punho * k - dy * punho * 0.2,
+                       x2 - dy * punho * k + dx * punho * 0.25, y2 + dx * punho * k + dy * punho * 0.25, _linha(lw * 0.6))
+        return x2, y2
     c.drawCircle(x2, y2, m, _fill(pele)); c.drawCircle(x2, y2, m, _linha(lw))
     return x2, y2
-
 
 def tipo_valido(nome):
     """Aceita nomes parecidos da IA ('portugues' -> 'soldado_portugues', 'holandes' -> 'holandes_1630')."""
@@ -342,7 +353,7 @@ def desenhar(c, pers, x, y, altura, t, semente=0, flag_fn=None):
     ombro = topo + h * 0.06
     onda = math.sin(t * 5 + semente) * 0.16
     angs = {"parado": (math.pi * 0.64, math.pi * 0.36), "triste": (math.pi * 0.6, math.pi * 0.42),
-            "aponta": (math.pi * 0.64, -0.08 + onda * 0.25), "bracos_cima": (-math.pi * 0.64 + onda, -math.pi * 0.36 - onda),
+            "aponta": (math.pi * 0.64, 0.08 + abs(onda) * 0.12), "bracos_cima": (-math.pi * 0.64 + onda, -math.pi * 0.36 - onda),
             "comemora": (-math.pi * 0.72 + onda, -math.pi * 0.28 - onda), "anda": (math.pi * 0.5 + passo * 0.45, math.pi * 0.5 - passo * 0.45),
             "assustado": (-math.pi * 0.78, -math.pi * 0.22)}
     a1, a2 = angs.get(pose, angs["parado"])
