@@ -34,8 +34,8 @@ def gemini(texto, voz, arquivo, estilo=None):
     if not chave:
         raise RuntimeError("sem GEMINI_API_KEY no .env")
     # idioma FIXO: sem isso, frases curtas saem com sotaque espanhol (o modelo adivinha o idioma)
-    instrucao = estilo or "Narre em portugues do Brasil, com sotaque brasileiro, tom de documentario"
-    fala = f"{instrucao}: {texto}"
+    # SO o texto vai para a voz (instrucoes no texto podem ser LIDAS em voz alta). O idioma vai em speechConfig.languageCode.
+    fala = texto
     corpo = {"contents": [{"parts": [{"text": fala}]}],
              "generationConfig": {"responseModalities": ["AUDIO"],
                                   "speechConfig": {"languageCode": "pt-BR",
